@@ -1,0 +1,91 @@
+# 课程介绍
+
+
+### 课程内容:
+    PHP底层源代码学习,实现原理,PHP扩展知识学习,相关开发工具运用.
+    
+    注:本教程均在LINUX下讲解.学习本课程人员最好有一定的PHP/LINUX/C基础知识.
+
+### PHP内核学习交流:QQ群 276949503
+    
+### 课件下载地址:https://github.com/huqinlou0123/php-internals-extended-development-course
+
+### 课程安排
+![课程安排](./image/1-1课程安排脑图.png)
+
+### 开发环境准备
+
+ubuntu 下载地址 http://mirrors.163.com/ubuntu-releases/17.10/
+
+安装JDK
+    * sudo apt update
+    * sudo apt install default-jdk
+
+eclipse 下载地址 https://www.eclipse.org/downloads/eclipse-packages/
+
+eclipse 主题(可选):https://marketplace.eclipse.org/content/darkest-dark-theme#maint-content-area
+
+## 安装构建依赖程序
+在继续之前,您可能应该与包管理器一起安装一些基本构建依赖项(默认情况下,您可能已经安装了前三个):
+* gcc或其他一些编译器套件.
+* libc-dev,它提供C标准库,包括头文件.
+* make,这是PHP使用的构建管理工具.
+* autoconf(2.59或更高版本),用于生成配置脚本.
+* automake(1.4或更高),它生成 Makefile.in文件.
+* libtool帮助管理共享库.
+* bison(2.4或更高版本),用于生成PHP解析器.
+* re2c(可选),用于生成PHP词法分析器.由于git存储库已经包含一个生成的词法分析器,所以只需要修改它就需要re2c.
+
+在Debian / Ubuntu上,您可以使用以下命令安装所有这些:
+`sudo apt-get install build-essential autoconf automake libtool bison re2c`
+
+
+## 课程作者：胡勤楼(QQ393450418),80后.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

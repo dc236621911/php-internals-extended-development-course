@@ -1,0 +1,137 @@
+## 示例
+
+### 用PHP实现 
+```php
+<?php
+const TEMP_CONVERTER_TO_CELSIUS     = 1;
+const TEMP_CONVERTER_TO_FAHREINHEIT = 2;
+//华氏转摄氏
+function fahrenheit_to_celsius($fahrenheit){
+    return 5/9 * ($fahrenheit - 32);
+}
+//摄氏转华氏
+function celsius_to_fahrenheit($celsius){
+    return 9/5 * $celsius + 32;
+}
+//双向转换
+function temperature_converter($temp, $type = TEMP_CONVERTER_TO_CELSIUS){
+    switch ($type) {
+        case TEMP_CONVERTER_TO_CELSIUS:
+            return sprintf("华氏 %.2f 度, 摄氏 %.2f 度", $temp, fahrenheit_to_celsius($temp));
+        case TEMP_CONVERTER_TO_FAHREINHEIT:
+            return sprintf("摄氏 %.2f 度, 华氏 %.2f 度", $temp, celsius_to_fahrenheit($temp));
+        default:
+            trigger_error("转换模式参数错误, 可接受的转换模式值为 1 或 2", E_USER_WARNING);
+        break;
+    }
+}
+//华氏数组批量转摄氏
+function multiple_fahrenheit_to_celsius(array $temperatures){
+    foreach ($temperatures as $temp) {
+        $return[] = fahreinheit_to_celsius($temp);
+    }
+    return $return;
+}
+```
+
+### 用扩展实现
+
+1. 生成骨架.
+     `./ext_skel --extname=pib --proto=./pib_proto --no-help`
+
+    pib_proto:
+    ```
+    double fahrenheit_to_celsius (double f)
+    double celsius_to_fahrenheit (double c)
+    string temperature_converter (double t, long mode)
+    array multiple_fahrenheit_to_celsius(array temperatures)
+    ```
+2. 编写代码 : 代码在./code/1-5-2/pib
+
+3. 编译测试
+
+    **编译：**
+    ```shell
+    cd ext/pib
+    ../../../php-7-1-8-install/bin/phpize
+    ./configure --with-php-config=../../../php-7-1-8-install/bin/php-config
+    make
+    ```
+    
+    **运行时配置**
+
+    **扩展测试**
+    ```php
+    <?php
+    echo celsius_to_fahrenheit(35);
+    echo fahrenheit_to_celsius(95);
+    echo temperature_converter(95,1);
+    print_r(multiple_fahrenheit_to_celsius(array(94,69,120)));
+
+    //查看扩展的反射信息,等于命令行中执行 php -dextension=pib.so --re pib
+    //如果不声明参数的话，反射获取不到参数信息
+    //print_r(ReflectionExtension::export('pib'));
+    ```
+
+
+
+
+
+
+### 扩展中的常量
+
+```c
+/* 常量的数据结构 */
+typedef struct _zend_constant {
+    zval value;
+    zend_string *name;
+    int flags;
+    int module_number;
+} zend_constant;
+
+/* 注册常量的宏: */
+/* 注册NULL常量 */
+#define REGISTER_NULL_CONSTANT(name, flags)  \
+    zend_register_null_constant((name), sizeof(name)-1, (flags), module_number)
+/* 注册bool常量 */
+#define REGISTER_BOOL_CONSTANT(name, bval, flags)  \
+    zend_register_bool_constant((name), sizeof(name)-1, (bval), (flags), module_number)
+/* 注册整形常量 */
+#define REGISTER_LONG_CONSTANT(name, lval, flags)  \
+    zend_register_long_constant((name), sizeof(name)-1, (lval), (flags), module_number)
+/* 注册浮点型常量 */
+#define REGISTER_DOUBLE_CONSTANT(name, dval, flags)  \
+    zend_register_double_constant((name), sizeof(name)-1, (dval), (flags), module_number)
+/* 注册字符串常量，str类型为char* */
+#define REGISTER_STRING_CONSTANT(name, str, flags)  \
+    zend_register_string_constant((name), sizeof(name)-1, (str), (flags), module_number)
+/* 注册字符串常量，截取指定长度，str类型为char* */
+#define REGISTER_STRINGL_CONSTANT(name, str, len, flags)  \
+    zend_register_stringl_constant((name), sizeof(name)-1, (str), (len), (flags), module_number)
+```
+
+
+
+
+
+#### TODO::扩展测试脚本的编写
+http://qa.php.net/write-test.php
+
+
+### 练习
+    https://github.com/ThomasWeinert/php-extension-sample
+    https://github.com/Leon2012/php-ext
+    https://github.com/wzx19840423/php-extension/tree/master/src
+
+
+
+### 跟踪调试扩展
+
+
+
+
+## 参考资料:
+    http://www.phpinternalsbook.com/index.html
+    https://github.com/pangudashu/php7-internal/
+    https://github.com/tvlooy/php-ext-dev-book
+

@@ -1,0 +1,493 @@
+## PHP扩展(模块)结构
+
+
+
+### zend_module_struct
+扩展首先需要创建一个zend_module_entry结构,这个变量必须是全局变量,且变量名必须是:扩展名称_module_entry,内核通过这个结构得到这个扩展都提供了哪些功能
+```c
+/* zend_modules.h */
+/* 参考:https://secure.php.net/manual/en/internals2.structure.modstruct.php */
+struct _zend_module_entry {
+    unsigned short size;        /* sizeof(zend_module_entry)             */
+    unsigned int zend_api;      /* ZEND_MODULE_API_NO                    */    /* STANDARD_MODULE_HEADER */ 
+    unsigned char zend_debug;   /* 是否开启debug                          */
+    unsigned char zts;          /* 是否开启线程安全                        */
+    const struct _zend_ini_entry *ini_entry;            /* 未使用        */
+    const struct _zend_module_dep *deps;                /* 扩展依赖      */
+
+    const char *name;                                   /* 扩展名称,不能重复 */
+    const struct _zend_function_entry *functions;       /* 扩展提供的内部函数列表 */
+    int (*module_startup_func)(INIT_FUNC_ARGS);         /* 扩展初始化回调函数,PHP_MINIT_FUNCTION或ZEND_MINIT_FUNCTION定义的函数 */
+    int (*module_shutdown_func)(SHUTDOWN_FUNC_ARGS);    /* 扩展关闭时回调函数 */
+    int (*request_startup_func)(INIT_FUNC_ARGS);        /* 请求开始前回调函数 */
+    int (*request_shutdown_func)(SHUTDOWN_FUNC_ARGS);   /* 请求结束时回调函数 */
+    void (*info_func)(ZEND_MODULE_INFO_FUNC_ARGS);      /* php_info展示的扩展信息处理函数 */
+    const char *version;                                /* 版本 */
+    
+    //STANDARD_MODULE_PROPERTIES
+    size_t globals_size;                                 /* */
+#ifdef ZTS                                               /* */
+    ts_rsrc_id* globals_id_ptr;                          /* */
+#else                                                    /* */    /* Globals management */ 
+    void* globals_ptr;                                   /* */
+#endif                                                   /* */
+    void (*globals_ctor)(void *global);                  /* */
+    void (*globals_dtor)(void *global);                  /* */                  /* */
+    int (*post_deactivate_func)(void);  /* Rarely used lifetime hook               */
+    int module_started;                 /* 扩展已启动(内部使用)                       */
+    unsigned char type;                 /* 扩展类型(内部使用)                         */    /* STANDARD_MODULE_PROPERTIES_EX */ 
+    void *handle;                       /* dlopen()返回句柄                          */
+    int module_number;                  /* 扩展的唯一编号                             */
+    const char *build_id;               /* build id,STANDARD_MODULE_PROPERTIES_EX   */ 
+};
+```
+```c
+zend_module_entry pib_module_entry = {
+	STANDARD_MODULE_HEADER,
+	"pib",
+	pib_functions,
+	PHP_MINIT(pib),
+	PHP_MSHUTDOWN(pib),
+	PHP_RINIT(pib),		/* Replace with NULL if there's nothing to do at request start */
+	PHP_RSHUTDOWN(pib),	/* Replace with NULL if there's nothing to do at request end */
+	PHP_MINFO(pib),
+	PHP_PIB_VERSION,
+	STANDARD_MODULE_PROPERTIES
+};
+```
+
+
+### 发布
+PHP编译时默认将所有符号隐藏，所以要获取扩展必须使用ZEND_GET_MODULE（your_ext）宏,会在头文件中有定义`PHP_<EXT-NAME>_API`.
+
+PHP在启动时会调用每个扩展中的get_module()函数，函数在头主文件`php_<your-ext-name>.c`(这里是 pib.c)中
+```c
+#ifdef COMPILE_DL_PIB
+#ifdef ZTS
+ZEND_TSRMLS_CACHE_DEFINE()
+#endif
+ZEND_GET_MODULE(pib)
+#endif
+```
+模块符号是在这里发布,当编译时加上`–enable-<my-ext-name>`时,`COMPILE_DL_<YOUR-EXT-NAME>`将被定义.模块被加载.
+
+### 发布API
+ 在头文件`php_<your-ext-name>.h`(这里是 php_pib.h)中
+```c
+#ifdef PHP_WIN32
+#   define PHP_PIB_API __declspec(dllexport)
+#elif defined(__GNUC__) && __GNUC__ >= 4
+#   define PHP_PIB_API __attribute__ ((visibility("default")))
+#else
+#   define PHP_PIB_API
+#endif
+```
+使用`PHP_<EXT-NAME>_API` (这里是PHP_PIB_API)宏将设置为公开,使其在其它扩展中可用.
+
+
+
+## 定义全局变量 
+```c
+/* php_pib.h */
+#define PIB_G(v) ZEND_MODULE_GLOBALS_ACCESSOR(pib, v) /* 定义一个宏用于访问扩展的全局资源结构体 */
+ZEND_BEGIN_MODULE_GLOBALS(pib)/* 展开后实际就是个普通的struct声明 */
+	zend_long   open_cache;
+	HashTable   class_table;
+ZEND_END_MODULE_GLOBALS(pib)
+/* pib.c */
+ZEND_DECLARE_MODULE_GLOBALS(pib) /* 创建一个此结构体的全局变量,会根据是否开启线程安全采用不同方式 */
+```
+接下来就可以在扩展中通过:PIB_G(opene_cache)、PIB_G(class_table)对结构体成员进行读写了.
+
+
+
+## 注册函数
+
+### zend_function_entry用于在扩展中注册函数到zend引擎
+由扩展名声明的函数称为“内部”函数,与PHP用户定义的函​​数相反,内部函数在当前请求结束时不会反注册直到PHP退出.
+```c
+#define INTERNAL_FUNCTION_PARAMETERS zend_execute_data *execute_data, zval *return_value
+typedef struct _zend_function_entry {
+        const char *fname;  /* 函数名 */
+        void (*handler)(INTERNAL_FUNCTION_PARAMETERS);  /* 处理程序 */
+        const struct _zend_internal_arg_info *arg_info; /* 参数,推荐使用宏定义. */
+        uint32_t num_args;  /* 参数个数 */
+        uint32_t flags;     /* 函数标记 */
+} zend_function_entry;
+struct _zend_module_entry {
+        ...
+        const struct _zend_function_entry *functions;     /* 函数定义声明 */
+        ...
+    /* ... */
+};
+```
+
+### 一个简单声明定义示例
+```c
+/* pib.c */
+PHP_FUNCTION(fahrenheit_to_celsius)
+{
+}
+static const zend_function_entry pib_functions[] =
+{
+    PHP_FE(fahrenheit_to_celsius, NULL)
+    PHP_FE_END /* 末尾必须加这个 */
+}
+zend_module_entry pib_module_entry = {
+    STANDARD_MODULE_HEADER,
+    "pib",
+    pib_functions,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    "0.1",
+    STANDARD_MODULE_PROPERTIES
+};
+/* 函数定义声明宏展开为: */
+void zif_fahrenheit_to_celsius(zend_execute_data *execute_data, zval *return_value)
+{
+}
+static const zend_function_entry pib_functions[] =
+{
+    { "fahrenheit_to_celsius", zif_fahrenheit_to_celsius, ((void *)0),
+        (uint32_t) (sizeof(((void *)0))/sizeof(struct _zend_internal_arg_info)-1), 0 },
+}
+/* 展开后的函数句加上了'zif'前缀,代表 Zend内部函数,以防止名称冲突. */
+```
+
+通过使用PHP_FUNCTION()宏来定义函数,同时在php_pib.h头文件里声明这个函数:
+```c
+/* pib.h  */
+PHP_FUNCTION (fahrenheit_to_celsius);
+```
+
+查看扩展的反射信息
+```shell
+/php/bin/php -dextension=pib.so --re pib
+```
+
+
+
+### 函数参数和返回值
+
+#### 参数声明
+
+参数声明不是强制性的,但高度推荐.反射API(reflection API)使用参数声明来获取有关该功能的信息.
+
+参数声明的数据结构
+```c
+typedef struct _zend_internal_arg_info {
+    const char *name;               /* 参数名 */
+    const char *class_name;         
+    zend_uchar type_hint;           /* 显式声明的类型 */
+    zend_uchar pass_by_reference;   /* 是否引用传参 */
+    zend_bool allow_null;           /* 是否允许参数为NULL，类似"!"的用法 */
+    zend_bool is_variadic;          /* 是否为可变参数 */
+} zend_internal_arg_info;
+
+/* 使用宏定义参数(如果你不知道如何命名参数矢量符号,一个实践是使用 'arginfo_[function name]'模式): */
+ZEND_BEGIN_ARG_INFO_EX(arginfo_fahrenheit_to_celsius, 0, 0, 1)
+    ZEND_ARG_INFO(0, fahrenheit)
+ZEND_END_ARG_INFO();
+
+/* 宏展开后 */
+static const zend_internal_arg_info arginfo_fahrenheit_to_celsius[] = {
+        { (const char*)(zend_uintptr_t)(1), ((void *)0), 0, 0, 0, 0 },
+        { "fahrenheit", ((void *)0), 0, 0, 0, 0 },
+};
+
+/* 声明参数相关宏,宏定义位置:Zend/zend_API.h: */
+/*
+name: 参数数组名，注册函数PHP_FE(function, arg_info)会用到
+_unused: 保留值，暂时无用
+return_reference: 返回值是否为引用，一般很少会用到
+required_num_args: required参数数
+*/
+ZEND_BEGIN_ARG_INFO_EX(name, _unused, return_reference, required_num_args);
+
+/* pass_by_ref表示是否引用传参，name为参数名称 */
+#define ZEND_ARG_INFO(pass_by_ref, name)                             { #name, NULL, 0, pass_by_ref, 0, 0 },
+
+/* 只声明此参数为引用传参 */
+#define ZEND_ARG_PASS_INFO(pass_by_ref)                              { NULL,  NULL, 0, pass_by_ref, 0, 0 },
+/* 显式声明此参数的类型为指定类的对象，等价于PHP中这样声明：MyClass $obj */
+#define ZEND_ARG_OBJ_INFO(pass_by_ref, name, classname, allow_null)  { #name, #classname, IS_OBJECT, pass_by_ref, allow_null, 0 },
+/* 显式声明此参数类型为数组，等价于：array $arr */
+#define ZEND_ARG_ARRAY_INFO(pass_by_ref, name, allow_null)           { #name, NULL, IS_ARRAY, pass_by_ref, allow_null, 0 },
+/* 显式声明为callable，将检查函数、成员方法是否可调 */
+#define ZEND_ARG_CALLABLE_INFO(pass_by_ref, name, allow_null)        { #name, NULL, IS_CALLABLE, pass_by_ref, allow_null, 0 },
+/* 通用宏，自定义各个字段 */
+#define ZEND_ARG_TYPE_INFO(pass_by_ref, name, type_hint, allow_null) { #name, NULL, type_hint, pass_by_ref, allow_null, 0 },
+/* 声明为可变参数 */
+#define ZEND_ARG_VARIADIC_INFO(pass_by_ref, name)                    { #name, NULL, 0, pass_by_ref, 0, 1 },
+
+```
+
+```c
+/* 这个参数数组声明完成后,我们需要将arginfo_fahrenheit_to_celsius添加到函数声明当中 */
+PHP_FE(fahrenheit_to_celsius, arginfo_fahrenheit_to_celsius)
+```
+
+#### 解析参数:zend_parse_parameters()
+
+zend_parse_parameters()是将参数读取到Zend引擎栈的函数.你会告诉你要读取多少参数,以及你想要为你提供什么样的类型.该函数将根据PHP类型转换规则将参数转换为您要求的类型.
+
+如果你使用zend_parse_parameters来接收参数，那么你是不需要ZEND_BEGIN_ARG_INFO_EX宏来进行入参数校验的。但如果使用的是zend_get_parameters那么就需要zend帮你自动校验了。记得在PHP_FE中加入校验名。
+
+函数参数是从PHP用户空间传到函数的，它们与用户自定义函数完全相同，包括参数的分配方式、传参过程，也是按照参数次序依次分配在运行栈帧上，所以在扩展中定义的函数直接按照顺序从运行栈帧上读取对应的值即可，PHP中通过zend_parse_parameters()这个函数解析运行栈帧上保存的参数
+
+`zend_parse_parameters(int num_args, const char *type_spec, ...);`
+
+第一个参数是给出运行时的参数数,通过ZEND_NUM_ARGS()获取：zend_execute_data->This.u2.num_args，前面曾介绍过zend_execute_data->This这个zval的用途.
+
+然后我们传递一个“d”字符,表示要接收的每一个参数类型为double类型.zend引擎将读取到的参数写入到变量c当中.
+
+解析参数时传递的字符规则在源码目录里的README.PARAMETER_PARSING_API文件中.
+
+解析的过程就是按照type_spec指定的各个类型，依次从zend_execute_data上获取参数，然后将参数地址赋给目标变量.
+```c
+static double php_fahrenheit_to_celsius(double f)
+{
+    return ((double)5/9) * (double)(f - 32);
+}
+
+PHP_FUNCTION(fahrenheit_to_celsius)
+{
+    double f;
+/* 在php7中，提供另一种获取参数的方式FAST_ZPP(Fast zend parameter parsing)，是为了提高参数解析的性能。 */
+#ifdef FAST_ZPP
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_DOUBLE(f)   /* zend_API.h */
+    ZEND_PARSE_PARAMETERS_END();
+#else
+    if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "d", &f) == FAILURE) {
+            return;
+    }
+#endif
+    /* 使用RETURN_***()宏,设置返回值并返回 */
+    RETURN_DOUBLE(php_fahrenheit_to_celsius(f)); /* #define RETURN_DOUBLE(d)      { RETVAL_DOUBLE(d); return; } */
+}
+```
+
+
+##### 返回值相关宏
+```c
+/* 返回布尔型，b：IS_FALSE、IS_TRUE */
+#define RETURN_BOOL(b)                  { RETVAL_BOOL(b); return; }
+/* 返回NULL */
+#define RETURN_NULL()                   { RETVAL_NULL(); return;}
+/* 返回整形，l类型：zend_long */
+#define RETURN_LONG(l)                  { RETVAL_LONG(l); return; }
+/* 返回浮点值，d类型：double */
+#define RETURN_DOUBLE(d)                { RETVAL_DOUBLE(d); return; }
+/* 返回字符串，可返回内部字符串，s类型为：zend_string *   */
+#define RETURN_STR(s)                   { RETVAL_STR(s); return; }
+/* 返回内部字符串，这种变量将不会被回收，s类型为：zend_string *   */
+#define RETURN_INTERNED_STR(s)          { RETVAL_INTERNED_STR(s); return; }
+/* 返回普通字符串，非内部字符串，s类型为：zend_string *   */
+#define RETURN_NEW_STR(s)               { RETVAL_NEW_STR(s); return; }
+/* 拷贝字符串用于返回，这个会自己加引用计数，s类型为：zend_string *   */
+#define RETURN_STR_COPY(s)              { RETVAL_STR_COPY(s); return; }
+/* 返回char *类型的字符串，s类型为char *   */
+#define RETURN_STRING(s)                { RETVAL_STRING(s); return; }
+/* 返回char *类型的字符串，s类型为char *，l为字符串长度，类型为size_t   */
+#define RETURN_STRINGL(s, l)            { RETVAL_STRINGL(s, l); return; }
+/* 返回空字符串   */
+#define RETURN_EMPTY_STRING()           { RETVAL_EMPTY_STRING(); return; }
+/* 返回资源，r类型：zend_resource *   */
+#define RETURN_RES(r)                   { RETVAL_RES(r); return; }
+/* 返回数组，r类型：zend_array *   */
+#define RETURN_ARR(r)                   { RETVAL_ARR(r); return; }
+/* 返回对象，r类型：zend_object *   */
+#define RETURN_OBJ(r)                   { RETVAL_OBJ(r); return; }
+/* 返回zval  */
+#define RETURN_ZVAL(zv, copy, dtor)     { RETVAL_ZVAL(zv, copy, dtor); return; }
+/* 返回false */
+#define RETURN_FALSE                    { RETVAL_FALSE; return; }
+/* 返回true */
+#define RETURN_TRUE                     { RETVAL_TRUE; return; }
+```
+
+
+
+#### 传递引用参数,修改上面代码:
+```c
+ZEND_BEGIN_ARG_INFO_EX(arginfo_fahrenheit_to_celsius, 0, 0, 1)
+    /* 这里1表示通知引擎必须通过引用传递该参数 */
+    ZEND_ARG_INFO(1, fahrenheit)
+ZEND_END_ARG_INFO();
+
+/* 当我们收到参数时,我们使用“z”参数类型,告诉我们要将其赋予zval *,接收到的zval为将是IS_REFERENCE类型,我们需要取消引用然后修改. */
+PHP_FUNCTION(fahrenheit_to_celsius)
+{
+    double result;
+    zval *param;
+    if (zend_parse_parameters(ZEND_NUM_ARGS(), "z", &param) == FAILURE) {
+        return;
+    }
+    ZVAL_DEREF(param);
+    convert_to_double(param);
+    ZVAL_DOUBLE(param, php_fahrenheit_to_celsius(Z_DVAL_P(param)));
+}
+
+/* a reference (by that we mean a &$php_reference) is a heap allocated zval stored into a zval container */
+/* 引用(&$php_var)是在堆中分配的zval然后存储在了zval容器中. */
+```
+
+
+
+## ini配置
+扩展中一般会把php.ini配置映射前面介绍的全局变量(资源)
+```c
+PHP_INI_BEGIN()
+    /* 将php.ini中的pib.opene_cache值映射到PIB_G()结构中的open_cache,类型为zend_long,默认值109,则可以这么定义: */
+	STD_PHP_INI_ENTRY("pib.open_cache", "109", PHP_INI_ALL, OnUpdateLong, open_cache, zend_pib_globals, pib_globals)
+    /* 其它规则 */
+    ...
+PHP_INI_END();
+/* 上面的定义展开后: */
+static const zend_ini_entry_def ini_entries[] = {
+	{
+		"pib.open_cache", 
+		OnUpdateLong,             
+		(void *) XtOffsetOf(zend_pib_globals, open_cache), //XtOffsetOf这个宏在linux环境下展开就是offsetof(),用来获取一个结构体成员的offset
+		(void*)&pib_globals,
+		NULL,
+		"109",
+		NULL,
+		PHP_INI_ALL,
+		sizeof("pib.open_cache")-1,
+		sizeof("109")-1
+	},
+	{ NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, 0, 0}
+}
+/*
+STD_PHP_INI_ENTRY(name,default_value,modifiable,on_modify,property_name,struct_type,struct_ptr)
+    name: php.ini中的配置标识符
+    default_value: 默认值,注意不管转化后是什么类型,这里必须设置为字符串
+    modifiable: 可修改等级,ZEND_INI_USER为可以在php脚本中修改,ZEND_INI_SYSTEM为可以在php.ini中修改,还有一个ZEND_INI_PERDIR,ZEND_INI_ALL表示三种都可以,通常情况下设置为ZEND_INI_ALL、ZEND_INI_SYSTEM即可
+    on_modify: 函数指针,用于指定发现这个配置后赋值处理的函数,默认提供了5个:OnUpdateBool、OnUpdateLong、OnUpdateLongGEZero、OnUpdateReal、OnUpdateString、OnUpdateStringUnempty,支持可以自定义
+    property_name: 要映射到的结构struct_type中的成员
+    struct_type: 映射结构的类型
+    struct_ptr: 映射结构的变量地址
+
+这个宏展开后生成一个zend_ini_entry_def结构:
+typedef struct _zend_ini_entry_def {
+	const char *name;
+	int (*on_modify)(zend_ini_entry *entry, zend_string *new_value, void *mh_arg1, void *mh_arg2, void *mh_arg3, int stage);
+	void *mh_arg1; //映射成员所在结构体的偏移:offsetof(type, member-designator)取到
+	void *mh_arg2; //要映射到结构的地址
+	void *mh_arg3;
+	const char *value;//默认值
+	void (*displayer)(zend_ini_entry *ini_entry, int type);
+	int modifiable;
+	uint name_length;
+	uint value_length;
+} zend_ini_entry_def;
+*/
+```
+
+#### 将ini配置注册到全局变量:
+```c
+/* php_pib.h */
+#define PIB_G(v) ZEND_MODULE_GLOBALS_ACCESSOR(pib, v)
+ZEND_BEGIN_MODULE_GLOBALS(pib)
+	zend_long   open_cache;
+ZEND_END_MODULE_GLOBALS(pib)
+
+/* pib.c */
+ZEND_DECLARE_MODULE_GLOBALS(pib)
+
+PHP_INI_BEGIN()
+    STD_PHP_INI_ENTRY("pib.open_cache", "109", PHP_INI_ALL, OnUpdateLong, open_cache, zend_pib_globals, pib_globals)
+PHP_INI_END();
+
+PHP_MINIT_FUNCTION(pib)
+{
+	REGISTER_INI_ENTRIES();
+	return SUCCESS;
+}
+
+PHP_MSHUTDOWN_FUNCTION(pib)
+{
+    UNREGISTER_INI_ENTRIES();
+    return SUCCESS;
+}
+
+zend_module_entry pib_module_entry = {
+    STANDARD_MODULE_HEADER,
+    "pib",
+    NULL,//pib_functions,
+    PHP_MINIT(pib),
+    PHP_MSHUTDOWN(pib),
+    NULL,//PHP_RINIT(pib),
+    NULL,//PHP_RSHUTDOWN(pib),
+    NULL,//PHP_MINFO(pib),
+    "1.0.0",
+    STANDARD_MODULE_PROPERTIES
+};
+
+```
+#### ini声明和读取:
+```c
+/* hello.c */
+PHP_INI_BEGIN()
+    PHP_INI_ENTRY("hello.yell", "0", PHP_INI_ALL, NULL)
+PHP_INI_END()
+
+PHP_MINIT_FUNCTION(hello) {
+  REGISTER_INI_ENTRIES();
+  return SUCCESS;
+}
+
+PHP_MSHUTDOWN_FUNCTION(hello) {
+  UNREGISTER_INI_ENTRIES();
+  return SUCCESS;
+}
+
+/* function hello(string $name): bool */
+PHP_FUNCTION(hello) {
+  int i = 0;
+  zend_string *name;
+
+  ZEND_PARSE_PARAMETERS_START(1, 1)
+    Z_PARAM_STR(name)
+  ZEND_PARSE_PARAMETERS_END();
+
+  if (INI_BOOL("hello.yell") == 1) {
+    while (name->val[i]) {
+      name->val[i] = toupper(name->val[i]);
+      i++;
+    }
+    php_printf("HELLO %s!\n",  ZSTR_VAL(name));
+  } else {
+    php_printf("Hello %s\n",  ZSTR_VAL(name));
+  }
+
+  RETURN_TRUE;
+}
+
+zend_module_entry hello_module_entry = {
+  STANDARD_MODULE_HEADER,
+  PHP_HELLO_EXTNAME,
+  hello_functions,        /* Function entries */
+  PHP_MINIT(hello),       /* Module init */
+  PHP_MSHUTDOWN(hello),   /* Module shutdown */
+  NULL,                   /* Request init */
+  NULL,                   /* Request shutdown */
+  NULL,                   /* Module information */
+  PHP_HELLO_VERSION,
+  STANDARD_MODULE_PROPERTIES
+};
+
+```
+
+## 参考资料:
+    http://www.phpinternalsbook.com/index.html
+    https://github.com/pangudashu/php7-internal/
+    https://secure.php.net/manual/en/internals2.structure.php    
+    https://secure.php.net/manual/en/internals2.funcs.php
+    http://www.cunmou.com/phpbook/7.2.md
+
