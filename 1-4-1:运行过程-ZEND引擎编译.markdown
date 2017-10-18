@@ -200,6 +200,8 @@ opcode是将PHP代码编译产生的Zend虚拟机可识别的指令,php7共有17
             2      > RETURN                                                   1
 
 
+![](./image/1-4-1vld-opcode.png)
+
 
 #### 相关数据结构Zend/compile.h
     参考:http://blog.csdn.net/phpkernel/article/details/5721384

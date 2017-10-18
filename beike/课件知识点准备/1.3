@@ -1,0 +1,63 @@
+词法解析：生成记号流
+    Lex:
+    Flex:
+    re2c:zend_language_scanner.l
+    Jlex:java
+
+语法解析器：检源程序语法是否正确，生成抽象语法树
+    ANTLR
+    Yacc:LR(1)分析算法
+      词法解析规则中的语义动作代码中 $$ 表示产生式:号左侧的非终结符，$1...$n对应:号右侧按顺序的每个TOKEN
+    Bison:zend_language_parser.y
+    Lemon:类似于更加著名的“YACC”和“BISON”。但与yacc或bison不兼容
+
+
+表 3.3　各类解析器生成器
+    软件名   能够生成解析器的语言           可处理语法的范围
+    ANTLR   Java、C、C++ 等多数语言       LL(*)
+    JavaCC  Java                        LL(k)
+    jay     Java                        LALR(1)
+    yacc    C                           LALR(1)
+    bison   C                           LALR(1)
+    kmyacc  C、Java、JavaScript、Perl    LALR(1)
+    Lemon   C                           LALR(1)
+    Parse::RecDecendent Perl            LL(1)
+    Racc    Ruby                        LALR(1)
+    Parsec  Haskell                     LL(k)
+    happy   Haskell                     LALR(1)
+    有的像 LALR(1) 这样，标注了 (1) 这样的数字。这表示能够超前扫描的 token 数，其中 (k) 或 (*) 表示能够超前扫描任意个数。
+
+
+只要你在Unix环境中写过程序，你必定会邂逅神秘的Lex&YACC，就如GNU/Linux用户所熟知的Flex&Bison，这里的Flex就是由Vern Paxon实现的一个Lex，Bison则是GNU版本的YACC.
+bison用$$表示规则左边的对象，用$1 $2 $3 等依次表示规则右边的对象。
+他把编译器解释成“把一个装着程序的字符串切成词，把词组装成树，然后把树弄成线性的”这么个过程，可以说通常情况下，编译器就是这么个过程。
+
+链接：https://www.zhihu.com/question/21755487/answer/82872281
+说点编译相关知识在前端或其他方面的应用：
+    - babel 是一个非常有趣的 js compiler，基于 es-ast 的编译器还有很多，如 jscodeshift 依赖的 recast 等。理解了代码被 tokenizer 解析到 ast 再到 output 才能更好的应用，比如实现代码重构、特殊编译等。
+    - 模版引擎，解析这样的 {{ content }}，还有这样的 {% for i in [0..10] %} 语句肯定是需要有parse的过程。如果你有兴趣，可以看看vue的实现 vuejs/vue - JavaScript
+    - parse 常用的数据通讯格式格式如解析 json/proto。在早期一些老浏览器不支持JSON内置对象的时候，JSON的parse和stringify用的第三方库 douglascrockford/JSON-js: JSON in JavaScript
+    - 以及 GraphQL 的实现，你可以理解他就是用一个请求的scheme来减少创建格式各样api的形式，对于整个scheme的处理，当然也要parser graphql-js/parser.js at master · graphql/graphql-js · GitHub
+    - Node.JS 的引擎：v8、Chakra，我想他们改进的不仅仅是 JavaScript 的执行速度和语法吧
+不知道举得几个栗子符不符合题主胃口..我之前也认为学习编译原理可能真的要写一个能把一个xx语言 parse 完 execute 成功才算ok，那个才叫编译器神马的...
+也是接触到这些东西之后开启了新世界的大门，原来“编译”这个概念应用如此之广
+
+
+新的解析器构建手法
+    几年前，说起解析器人们首先还是会想起 yacc（LALR），但最近解析器界出现了新的流派。
+    其中之一是和 LL 解析器、LR 解析器风格截然不同的 Packrat 解析器。无论哪款 Packrat 解析器，都具有如下特征。
+        1. 支持无限的超前扫描
+        2. 无需区分扫描器和解析器，可以一并编写
+        3. 内存的消耗量和字符串的长度（代码的长度）成比例
+        4. 语法无二义性（不会发生空悬 else 的问题）
+        Packrat 解析器可以说是今后的潜力股。
+    其二是出现了直接使用编程语言来描述语法的方法。例如 parser combinator 技术就是其中之一。
+        JavaCC 用不同于 Java 的形式来描述语法，之后再生成代码。如果使用 parser combinator 这样的技术的话，就可以用 Java 等编程语言直接表示语法。利用这样的手法，解析器生成器就成为了单纯的程序库，因此无需导入像 JavaCC 这样的额外的工具，这是它的主要优点。
+    无论上述哪种变化，都是以能够更简单、方便地使用解析器为共同目标。
+
+参考《自制编程语言》2.1章节
+    在规则区块中遵循这样的书写方式：一个正则表达式的后面紧跟若干个空格，后接C代码。如果输入的字符串匹配正则表达式，则执行后面的C代码。这里的C代码部分称为动作（action）。
+
+2.2.3 yacc
+yacc是自动生成语法分析器的工具，输入扩展名为 .y的文件，就会输出语法分析器的C语言代码。bison则是GNU项目所发布的yacc的功能扩充版。
+

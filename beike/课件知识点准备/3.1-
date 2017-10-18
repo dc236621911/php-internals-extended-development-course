@@ -1,0 +1,71 @@
+变量值的存储
+    Z_TYPE_P(z)=IS_BOOL/LONG;  Z_LVAL_P(z)=((b)!=0);
+
+EG宏:一个用于保存在运行时数据的全局结构体。excute globals
+EX宏：
+CG宏:compiler globals
+    Searching 19192 files for "# define CG"
+    /home/ll/workspace/C/php-7.1.4/Zend/zend_globals_macros.h:
+       32  /* Compiler */
+       33  #ifdef ZTS
+       34: # define CG(v) ZEND_TSRMG(compiler_globals_id, zend_compiler_globals *, v)
+       35  #else
+       36: # define CG(v) (compiler_globals.v)
+       37  extern ZEND_API struct _zend_compiler_globals compiler_globals;
+       38  #endif
+    2 matches in 1 file
+SG宏:sapi全局变量
+
+Zend为每个函数(准确的说是zend_op_array)分配了一个私有的符号表来保存该函数的静态变量。(http://www.php-internals.com/book/?p=chapt03/03-04-static-var)
+
+在ZE执行的过程中，有四个全局的变量，这些变量都是用于ZE运行时所需信息的存储：
+//_zend_compiler_globals 编译时信息，包括函数表等
+zend_compiler_globals    *compiler_globals;
+//_zend_executor_globals 执行时信息
+zend_executor_globals    *executor_globals;
+//_php_core_globals 主要存储php.ini内的信息
+php_core_globals         *core_globals;
+//_sapi_globals_struct SAPI的信息
+sapi_globals_struct      *sapi_globals;
+
+
+http://www.php-internals.com/book/?p=chapt03/03-06-02-var-scope
+对于全局变量，Zend引擎有一个_zend_executor_globals结构，该结构中的symbol_table就是全局符号表， 其中保存了在顶层作用域中的变量。同样，函数或者对象的方法在被调用时会创建active_symbol_table来保存局部变量。 当程序在顶层中使用某个变量时，ZE就会在symbol_table中进行遍历， 同理，如果程序运行于某个函数中，Zend引擎会遍历查询与其对应的active_symbol_table， 而每个函数的active_symbol_table是相对独立的，由此而实现的作用域的独立。
+展开来看，如果我们调用的一个函数中的变量，ZE使用_zend_execute_data来存储 某个单独的op_array（每个函数都会生成单独的op_array)执行过程中所需要的信息
+
+
+//PHP内部函数在解析参数
+  ZEND_API int zend_parse_parameters(int num_args TSRMLS_DC, char *type_spec, ...)
+  第一个参数num_args表明表示想要接收的参数个数，我们经常使用ZEND_NUM_ARGS() 来表示对传入的参数“有多少要多少”。
+  第二参数应该总是宏 TSRMLS_CC 。
+  第三个参数 type_spec 是一个字符串，用来指定我们所期待接收的各个参数的类型，有点类似于 printf 中指定输出格式的那个格式化字符串。
+  剩下的参数就是我们用来接收PHP参数值的变量的指针。
+
+
+//匿名函数
+  <?php
+  function getCounter() {
+      $i = 0;
+      return function() use($i) { // 这里如果使用引用传入变量: use(&$i)
+          echo ++$i;
+      };
+  }
+
+  $counter = getCounter();
+  $counter(); // 1
+  $counter(); // 1
+
+
+  Zend虚拟机核心实现代码
+  为了方便读者对Zend引擎的实现有个全面的感觉，下面列出涉及到Zend引擎实现的核心代码文件功能参考。
+  Zend引擎的核心文件都在$PHP_SRC/Zend/目录下面。不过最为核心的文件只有如下几个：
+      PHP语法实现
+          Zend/zend_language_scanner.l
+          Zend/zend_language_parser.y
+      Opcode编译
+          Zend/zend_compile.c
+      执行引擎
+          Zend/zend_vm_*
+          Zend/zend_execute.c
+
+

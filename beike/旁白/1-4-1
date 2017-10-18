@@ -1,0 +1,105 @@
+```c
+/*
+特殊节点
+ZEND_AST_ZVAL / ZEND_AST_ZNODE
+包含ZVAL的节点，ZVAL为PHP中的变量，用来表示文字，变量名，调用函数名等，总是叶节点.
+由zend_ast_create_zval / zend_ast_create_zval_from_str / zend_ast_create_zval_from_long创建*/
+typedef struct _zend_ast_zval {
+        zend_ast_kind kind;
+        zend_ast_attr attr;
+        zval val; /* Lineno is stored in val.u2.lineno */ 
+} zend_ast_zval;
+
+/*
+定义节点
+ZEND_AST_FUNC_DECL / ZEND_AST_CLOSURE / ZEND_AST_METHOD / ZEND_AST_CLASS
+始终保留4个子元素（即使为NULL）,由zend_ast_create_decl创建
+4个子元素的含义：
+    AST_FUNC_DECL函数定义：
+        1：AST_PARAM_LIST（虚拟参数），2：未使用，3：AST_STMT_LIST（函数内部），4：AST_ZVAL（返回类型）
+    AST_CLOSURE匿名函数定义：
+        1：AST_PARAM_LIST（虚拟参数），2：AST_CLOSURE_USES（使用），3：AST_STMT_LIST（函数内部），4：AST_ZVAL
+    AST_METHOD方法定义：
+        1：AST_PARAM_LIST（虚拟参数），2：未使用，3：AST_STMT_LIST（方法内部），4：AST_ZVAL（返回类型）
+    AST_CLASS类，匿名类，trait，接口定义
+        1：AST_ZVAL（继承源），2：AST_NAME_LIST（implements），3：AST_STMT_LIST（内部），4：未使用
+*/
+typedef struct _zend_ast_decl {
+        zend_ast_kind kind;
+        zend_ast_attr attr; /* Unused */
+        uint32_t start_lineno;
+        uint32_t end_lineno;
+        uint32_t flags;
+        unsigned char *lex_pos;
+        zend_string *doc_comment;
+        zend_string *name;
+        zend_ast *child[4];
+} zend_ast_decl;
+
+/*
+列表节点
+具有可变长度子节点的节点,由zend_ast_create_list创建/使用zend_ast_list_add添加子项
+*/
+typedef struct _zend_ast_list {
+        zend_ast_kind kind;
+        zend_ast_attr attr;
+        uint32_t lineno;
+        uint32_t children;
+        zend_ast *child[1];
+} zend_ast_list;
+
+/*
+除特殊，定义和列表之外的所有普通节点
+由Zend_ast_create（不含attr）/ zend_ast_create_ex / zend_ast_create_binary_op / zend_ast_create_assign_op / zend_ast_create_cast创建
+*/
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+编译过程有工具
+
+
+
+
+opcode:当前个数
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

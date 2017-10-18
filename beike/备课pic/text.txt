@@ -1,0 +1,278 @@
+PHP脚本性能分析：xdebug
+				xprof
+				zend
+
+编译PHP
+	apt-get install libxml2-dev   没有dev的包通常不包含必需的头文件
+	sudo apt-get install build-essential autoconf automake libtool bison re2c
+	sudo apt-get build-dep php 安装大量可选构建依赖项
+
+
+	git clone http://github.com/php/php-src
+	./buildconf
+	 ./configure CFLAGS="-liconv -O0 -g3" --enable-debug
+
+	eclipse:import ->  autotools project 
+	make -j4 
+	make install 
+	
+	在make 完以后，在sapi/cli目录里就已经有了php的可以执行文件. 执行一下命令：
+	./sapi/cli/php -v
+
+	〜/ php-src> ./buildconf＃      只有从git构建才需要
+	〜/ php-src> ./configure
+	〜/ php-src> make -jN
+	对于快速构建，将N替换为可用的CPU核心数（请参阅grep “cpu cores” / proc / cpuinfo）。
+
+	要创建一个仅包含最小扩展数量的构建，请使用--disable-all选项：
+	有两个开关，开发扩展或PHP工作时应始终指定：
+		--enable-debug启用调试模式，具有多重效果：编译将使用 -g运行以生成调试符号，另外使用最低优化级别 -O0。这将使PHP慢得多，但使用像 gdb这样的工具进行调试更加可预测。此外，调试模式定义了 ZEND_DEBUG宏，它将启动引擎中的各种调试助手。除其他事项外，还将报告内存泄漏以及某些数据结构的不正确使用。
+	    --enable-maintainer-zts可以实现线程安全。该开关将定义 ZTS宏，这又将使得PHP使用的整个TSRM（线程安全资源管理器）机器。为PHP编写线程安全扩展非常简单，但只有确保启用此开关。
+
+
+
+
+PHP源码阅读工具
+	使用VIM + Ctags	/Eclipse
+
+"##"被称为 连接符（concatenator)
+"#"是一种预处理运算符，它的功能是将其后面的宏参数进行 字符串化操作,将语言符号(Token)转化为字符串
+
+将宏定义为空， 当于从代码中删除。
+
+
+PG():字段很大一部分是与php.ini文件中的配置项对应的。 在PHP启动并读取php.ini文件时就会对这些字段进行赋值， 而用户空间的ini_get()及ini_set()函数操作的一些配置也是对这个全局变量进行操作的。
+其他地方也存在很多类似的宏，这些宏和PG宏一样，都是为了将线程安全进行封装，同时通过约定的 G 命名来表明这是全局的
+
+
+
+在编译过程中，函数列表、类列表等都存放在编译时的全局变量中， 在准备执行过程时，会将这些列表赋值给执行的全局变量中，如：EG(function_table) = CG(function_table);
+
+
+
+CGI:服务器监听，然后fork子进程，在子进程中popen请求的cgi程序，然后返回。
+
+FastCGI消息通讯样例：一行表示一个数据包。下面的例子来自于官网
+	{FCGI_BEGIN_REQUEST,   1, {FCGI_RESPONDER, 0}}
+	{FCGI_PARAMS,          1, "\013\002SERVER_PORT80\013\016SERVER_ADDR199.170.183.42 ... "}
+	{FCGI_STDIN,           1, "quantity=100&item=3047936"}
+	{FCGI_STDOUT,          1, "Content-type: text/html\r\n\r\n<html>\n<head> ... "}
+	{FCGI_END_REQUEST,     1, {0, FCGI_REQUEST_COMPLETE}}
+
+opcode处理函数的命名是有以下规律的：
+	ZEND_[opcode]_SPEC_(变量类型1)_(变量类型2)_HANDLER
+
+常量标记
+	除了CONST_CS标记，常量的flags字段通常还可以用CONST_PERSISTENT和CONST_CT_SUBST。
+
+//_zend_compiler_globals 编译时信息，包括函数表等
+zend_compiler_globals    *compiler_globals;  
+//_zend_executor_globals 执行时信息
+zend_executor_globals    *executor_globals; 
+//_php_core_globals 主要存储php.ini内的信息
+php_core_globals         *core_globals; 
+//_sapi_globals_struct SAPI的信息
+sapi_globals_struct      *sapi_globals;
+
+
+
+当执行一个拥有参数的用户自定义的函数时，其实它相当于赋值一个操作，即$s = $a; 只是这个赋值操作的引用计数会执行两次，除了给函数自定义的符号表，还有一个是给函数栈。
+
+
+
+从函数直接返回值的宏，此宏设置返回值后直接return
+	RETURN_RESOURCE(resource) 返回一个资源。
+设置函数返回值的宏：
+	RETVAL_RESOURCE(resource) 设定返回值为指定的一个资源。
+
+
+
+PHP提供了一个hook，我们可以在启动PHP前指定USE_ZEND_ALLOC环境变量为0，即关闭内存管理功能。 这样所有的内存分配都会直接向操作系统申请，这样valgrind就可以帮助我们定位问题。
+	http://www.php-internals.com/book/?p=chapt06/06-07-memory-leaks
+	如果PHP内存管理打开了之后，如果发生了这种异常情况下的长跳转，PHP会将标志位：CG(unclean_shutdown)设置为true， 在请求结束后会将所有的内存进行释放
+
+
+
+用户在PHP中定义的变量我们都可以在一个HashTable中找到,当用户在PHP中调用一个函数或者类的方法时，内核会创建一个新的符号表并激活之.
+	struct _zend_executor_globals {
+	    ...
+	    HashTable symbol_table;
+	    HashTable *active_symbol_table;
+	    ...
+	};  
+
+
+
+--enable-debug 最典型的功能便是在每一个请求结束后给出这一次请求中内存的泄漏情况。编译出来的php则会嵌入gdb或其它文件需要的所有调试信息。
+
+
+
+二进制安全(binary safe)是什么意思？ https://www.zhihu.com/question/28705562/answer/84320871
+	sds.h/sds.c struct sdshdr {
+	    int len;
+	    int free;
+	    char buf[];
+	};
+	因为有了对字符串长度定义len, 所以在处理字符串时候不会以零值字节(\0)为字符串结尾标志. 二进制安全就是输入任何字节都能正确处理, 即使包含零值字节.
+
+	c中的strlen函数就不算是binary safe的，因为它依赖于特殊的字符'\0'来判断字符串是否结束，所以对于字符串str = "1234\0123"来说，strlen(str)=4而在php中，strlen函数是binary safe的，因为它不会对任何字符（包括'\0'）进行特殊解释，所以在php中，strlen(str)=8所以，我理解的二进制安全的意思是：只关心二进制化的字符串,不关心具体格式.只会严格的按照二进制的数据存取。不会妄图已某种特殊格式解析数据。
+
+
+zend_parse_parameters中的(|)参数，这个参数之前的参数被认为是必须的，之后的便认为是非必须的
+	默认参数：
+	ZEND_FUNCTION(sample_hello_world) {
+	    char *name;
+	    int name_len;
+	    char *greeting = "Mr./Mrs.";
+	    int greeting_len = sizeof("Mr./Mrs.") - 1;
+	 
+	 
+	    if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "s|s",
+	      &name, &name_len, &greeting, &greeting_len) == FAILURE) {
+	        RETURN_NULL();
+	    }
+	    php_printf("Hello ");
+	    PHPWRITE(greeting, greeting_len);
+	    php_printf(" ");
+	    PHPWRITE(name, name_len);
+	    php_printf("!\n");
+	}
+
+
+zend_get_parameters 以zval为载体来接收参数
+
+
+EG()	这个宏可以用来访问符号表，函数，资源信息和常量。
+CG()	用来访问核心全局变量。
+PG()	PHP全局变量。我们知道php.ini会映射一个或者多个PHP全局结构。举几个使用这个宏的例子：PG(register_globals), PG(safe_mode), PG(memory_limit)
+FG()	文件全局变量。大多数文件I/O或相关的全局变量的数据流都塞进标准扩展出口结构。
+SG()    php
+
+
+使用./ext_skel指令 解析zlib头:
+	./ext_skel extname=sample8 \ proto=/usr/local/include/zlib/zlib.h
+
+
+
+
+
+第三方扩展和与PHP捆绑在一起的扩展没有根本区别。
+	./config.nice --enable-apcu	
+	您应该始终在构建扩展时指定--with-php-config选项
+
+
+
+扩展对5个主要因素非常敏感。如果他们不匹配，扩展将无法使用：
+	PHP Api版本
+	Zend Module Api 版本
+	Zend Extension Api 版本	
+	Debug mode
+	Thread safety
+
+
+
+使用Z_TYPE_P（）宏来检索类型标签，并使用Z_LVAL_P（）获取long（整数）值。所有访问宏都具有_P后缀或没有后缀的变体。你使用哪一个取决于你是使用zval还是zval *
+
+
+将字符串赋值给zval变量
+	ZVAL_STRING （return_value ， “hello world！” ）; 
+
+	使用ZSTR_VAL（）宏访问字符数组。ZSTR_LEN（）允许访问长度信息
+	zend_string相关的宏都以ZSTR_**（）开始
+
+当字符串被内联时，它的GC标志被改变以添加IS_STR_INTERNED标志
+	When a string is interned, its GC flags are changed to add the IS_STR_INTERNED flag
+
+
+可以通过查看在编译PHP时生成的main / internal_functions.c来查找静态编译扩展的列表。
+
+
+GCC 4.0支持一个新的选项，用于设置源文件中符号的缺省可见性。这个选项是-fvisibility=vis ，您可以用它来设置当前编译的符号的可见性。这个选项的值可以是default（缺省）或者hidden（隐藏），设置为default时，没有显式标识为hidden的符号都处理为可见；设置为hidden时，没有显式标识为可见的符号都处理为隐藏。如果您在编译中没有指定-fvisibility选项，编译器会自行处理为缺省的可见性。
+
+
+
+永远记住在每个--FILE--部分中包括关闭PHP标签。
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+龙宗法
+3704 02 1956 0728 4339
+
+王朝兰
+3704 02 1964 0717 704x
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
