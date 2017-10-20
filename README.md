@@ -16,4 +16,4 @@ http://edu.csdn.net/course/detail/6261
 
 课程难免会有瑕疵。欢迎意见建议和错误指正。
 
-<<PHP底层内核源码与扩展开发>>
+[PHP底层内核源码与扩展开发](http://phpcoredump.com)
