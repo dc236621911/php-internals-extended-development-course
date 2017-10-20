@@ -1,4 +1,4 @@
-# 课程介绍
+# <<PHP底层内核源码与扩展开发>>课程介绍
 
 
 ### 课程内容:
@@ -9,6 +9,8 @@
 ### PHP内核学习交流:QQ群 276949503
     
 ### 最新课件下载地址:https://github.com/huqinlou0123/php-internals-extended-development-course
+
+### 配套视频观看地址: http://edu.csdn.net/course/detail/6261
 
 ### 课程安排
 ![课程安排](./image/1-1课程安排脑图.png)
